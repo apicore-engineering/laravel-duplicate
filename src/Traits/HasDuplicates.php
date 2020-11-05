@@ -68,39 +68,35 @@ trait HasDuplicates
      */
     public function saveAsDuplicate()
     {
-        try {
-            if ($this->fireModelEvent('duplicating') === false) {
-                return false;
+        if ($this->fireModelEvent('duplicating') === false) {
+            return false;
+        }
+
+        $this->initDuplicateOptions();
+
+        $model = DB::transaction(function () {
+            $model = $this->duplicateModel();
+
+            if ($this->duplicateOptions->shouldDuplicateDeeply !== true) {
+                return $model;
             }
 
-            $this->initDuplicateOptions();
-
-            $model = DB::transaction(function () {
-                $model = $this->duplicateModel();
-
-                if ($this->duplicateOptions->shouldDuplicateDeeply !== true) {
-                    return $model;
+            foreach ($this->getRelationsForDuplication() as $relation => $attributes) {
+                if (RelationHelper::isChild($attributes['type'])) {
+                    $this->duplicateDirectRelation($model, $relation);
                 }
 
-                foreach ($this->getRelationsForDuplication() as $relation => $attributes) {
-                    if (RelationHelper::isChild($attributes['type'])) {
-                        $this->duplicateDirectRelation($model, $relation);
-                    }
-
-                    if (RelationHelper::isPivoted($attributes['type'])) {
-                        $this->duplicatePivotedRelation($model, $relation);
-                    }
+                if (RelationHelper::isPivoted($attributes['type'])) {
+                    $this->duplicatePivotedRelation($model, $relation);
                 }
-
-                return $model;
-            });
-
-            $this->fireModelEvent('duplicated', false);
+            }
 
             return $model;
-        } catch (Exception $e) {
-            throw $e;
-        }
+        });
+
+        $this->fireModelEvent('duplicated', false);
+
+        return $model;
     }
 
     /**
@@ -111,37 +107,33 @@ trait HasDuplicates
      */
     public function saveDuplicateRelations(Model $original, Model $model)
     {
-        try {
-            if ($original->fireModelEvent('duplicating') === false) {
-                return false;
+        if ($original->fireModelEvent('duplicating') === false) {
+            return false;
+        }
+
+        $original->initDuplicateOptions();
+
+        $model = DB::transaction(function () use (&$original, &$model) {
+            if ($original->duplicateOptions->shouldDuplicateDeeply !== true) {
+                return $model;
             }
 
-            $original->initDuplicateOptions();
-
-            $model = DB::transaction(function () use (&$original, &$model) {
-                if ($original->duplicateOptions->shouldDuplicateDeeply !== true) {
-                    return $model;
+            foreach ($original->getRelationsForDuplication() as $relation => $attributes) {
+                if (RelationHelper::isChild($attributes['type'])) {
+                    $original->duplicateDirectRelation($model, $relation);
                 }
 
-                foreach ($original->getRelationsForDuplication() as $relation => $attributes) {
-                    if (RelationHelper::isChild($attributes['type'])) {
-                        $original->duplicateDirectRelation($model, $relation);
-                    }
-
-                    if (RelationHelper::isPivoted($attributes['type'])) {
-                        $original->duplicatePivotedRelation($model, $relation);
-                    }
+                if (RelationHelper::isPivoted($attributes['type'])) {
+                    $original->duplicatePivotedRelation($model, $relation);
                 }
-
-                return $model;
-            });
-
-            $original->fireModelEvent('duplicated', false);
+            }
 
             return $model;
-        } catch (Exception $e) {
-            throw $e;
-        }
+        });
+
+        $original->fireModelEvent('duplicated', false);
+
+        return $model;
     }
 
     /**
