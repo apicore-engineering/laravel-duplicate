@@ -19,13 +19,6 @@ use SplFileObject;
 class RelationHelper
 {
     /**
-     * List of all relations defined on a model class.
-     *
-     * @var array
-     */
-    protected static $relations = [];
-
-    /**
      * Laravel's available relation types (classes|methods).
      *
      * @var array
@@ -186,6 +179,7 @@ class RelationHelper
      */
     public static function getModelRelations(Model $model): array
     {
+        $relations = [];
         foreach (get_class_methods($model) as $method) {
             if (! method_exists(Model::class, $method)) {
                 $reflection = new ReflectionMethod($model, $method);
@@ -208,7 +202,7 @@ class RelationHelper
                         $relation = $model->$method();
 
                         if ($relation instanceof Relation) {
-                            static::$relations[$method] = [
+                            $relations[$method] = [
                                 'type' => get_class($relation),
                                 'model' => $relation->getRelated(),
                                 'original' => $relation->getParent(),
@@ -219,6 +213,6 @@ class RelationHelper
             }
         }
 
-        return static::$relations;
+        return $relations;
     }
 }

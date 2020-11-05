@@ -50,6 +50,17 @@ trait HasDuplicates
     }
 
     /**
+     * Function to run after the duplicated instance is saved
+     *
+     * @param Model $duplicate
+     * @return Model
+     */
+    public function afterDuplicationSave(Model $duplicate)
+    {
+        return $duplicate;
+    }
+
+    /**
      * Duplicate a model instance and it's relations.
      *
      * @return Model|bool
@@ -93,6 +104,47 @@ trait HasDuplicates
     }
 
     /**
+     * Duplicate a model instance and it's relations.
+     *
+     * @return Model|bool
+     * @throws Exception
+     */
+    public function saveDuplicateRelations(Model $original, Model $model)
+    {
+        try {
+            if ($original->fireModelEvent('duplicating') === false) {
+                return false;
+            }
+
+            $original->initDuplicateOptions();
+
+            $model = DB::transaction(function () use (&$original, &$model) {
+                if ($original->duplicateOptions->shouldDuplicateDeeply !== true) {
+                    return $model;
+                }
+
+                foreach ($original->getRelationsForDuplication() as $relation => $attributes) {
+                    if (RelationHelper::isChild($attributes['type'])) {
+                        $original->duplicateDirectRelation($model, $relation);
+                    }
+
+                    if (RelationHelper::isPivoted($attributes['type'])) {
+                        $original->duplicatePivotedRelation($model, $relation);
+                    }
+                }
+
+                return $model;
+            });
+
+            $original->fireModelEvent('duplicated', false);
+
+            return $model;
+        } catch (Exception $e) {
+            throw $e;
+        }
+    }
+
+    /**
      * Get a replicated instance of the original model's instance.
      *
      * @return Model
@@ -120,10 +172,13 @@ trait HasDuplicates
     protected function duplicateDirectRelation(Model $model, string $relation): Model
     {
         $this->{$relation}()->get()->each(function ($rel) use ($model, $relation) {
+            $original = $rel;
             $rel = $this->duplicateRelationWithExcluding($rel, $relation);
             $rel = $this->duplicateRelationWithUnique($rel, $relation);
+            $rel = $model->{$relation}()->save($rel);
+            $rel = $original->afterDuplicationSave($rel);
 
-            $model->{$relation}()->save($rel);
+            $original->saveDuplicateRelations($original, $rel);
         });
 
         return $model;
