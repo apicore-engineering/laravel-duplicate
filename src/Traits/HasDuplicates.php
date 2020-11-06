@@ -168,9 +168,14 @@ trait HasDuplicates
             $rel = $this->duplicateRelationWithExcluding($rel, $relation);
             $rel = $this->duplicateRelationWithUnique($rel, $relation);
             $rel = $model->{$relation}()->save($rel);
-            $rel = $original->afterDuplicationSave($rel);
 
-            $original->saveDuplicateRelations($original, $rel);
+            if (method_exists($original, 'afterDuplicationSave')) {
+                $rel = $original->afterDuplicationSave($rel);
+            }
+
+            if (method_exists($original, 'saveAsDuplicate')) {
+                $original->saveDuplicateRelations($original, $rel);
+            }
         });
 
         return $model;
