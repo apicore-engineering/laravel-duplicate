@@ -146,8 +146,11 @@ trait HasDuplicates
     {
         $model = $this->duplicateModelWithExcluding();
         $model = $this->duplicateModelWithUnique($model);
-
         $model->save();
+
+        if (method_exists($this, 'afterDuplicationSave')) {
+            $model = $this->afterDuplicationSave($model);
+        }
 
         return $model;
     }
@@ -193,9 +196,18 @@ trait HasDuplicates
     protected function duplicatePivotedRelation(Model $model, string $relation): Model
     {
         $this->{$relation}()->get()->each(function ($rel) use ($model, $relation) {
+            $original = $rel;
             $attributes = $this->establishDuplicatablePivotAttributes($rel);
 
             $model->{$relation}()->attach($rel, $attributes);
+
+            if (method_exists($original, 'afterDuplicationSave')) {
+                $rel = $original->afterDuplicationSave($rel);
+            }
+
+            if (method_exists($original, 'saveAsDuplicate')) {
+                $original->saveDuplicateRelations($original, $rel);
+            }
         });
 
         return $model;
