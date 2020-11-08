@@ -50,6 +50,25 @@ trait HasDuplicates
     }
 
     /**
+     * Return false if you want to skip the duplication of the model.
+     *
+     * @return bool
+     */
+    public function shouldDuplicate(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @param Model $duplicate
+     * @return Model
+     */
+    public function afterDuplication(Model $duplicate)
+    {
+        return $duplicate;
+    }
+
+    /**
      * Function to run after the duplicated instance is saved
      *
      * @param Model $duplicate
@@ -89,6 +108,10 @@ trait HasDuplicates
                 if (RelationHelper::isPivoted($attributes['type'])) {
                     $this->duplicatePivotedRelation($model, $relation);
                 }
+            }
+
+            if (method_exists($this, 'afterDuplication')) {
+                $model = $this->afterDuplication($model);
             }
 
             return $model;
@@ -168,6 +191,11 @@ trait HasDuplicates
     {
         $this->{$relation}()->get()->each(function ($rel) use ($model, $relation) {
             $original = $rel;
+
+            if (method_exists($original, 'shouldDuplicate') && !$original->shouldDuplicate()) {
+                return;
+            }
+
             $rel = $this->duplicateRelationWithExcluding($rel, $relation);
             $rel = $this->duplicateRelationWithUnique($rel, $relation);
             $rel = $model->{$relation}()->save($rel);
@@ -178,6 +206,10 @@ trait HasDuplicates
 
             if (method_exists($original, 'saveAsDuplicate')) {
                 $original->saveDuplicateRelations($original, $rel);
+            }
+
+            if (method_exists($original, 'afterDuplication')) {
+                $rel = $original->afterDuplication($rel);
             }
         });
 
@@ -197,6 +229,11 @@ trait HasDuplicates
     {
         $this->{$relation}()->get()->each(function ($rel) use ($model, $relation) {
             $original = $rel;
+
+            if (method_exists($original, 'shouldDuplicate') && !$original->shouldDuplicate()) {
+                return;
+            }
+
             $attributes = $this->establishDuplicatablePivotAttributes($rel);
 
             $model->{$relation}()->attach($rel, $attributes);
