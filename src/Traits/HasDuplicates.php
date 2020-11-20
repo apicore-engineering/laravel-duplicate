@@ -6,7 +6,9 @@ use Closure;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Neurony\Duplicate\Helpers\RelationHelper;
 use Neurony\Duplicate\Options\DuplicateOptions;
 
@@ -60,6 +62,26 @@ trait HasDuplicates
     }
 
     /**
+     * The container for all the options necessary for this trait.
+     * Options can be viewed in the Neurony\Duplicate\Options\DuplicateOptions file.
+     *
+     * @var string $cacheKey
+     */
+    public $cacheKey = null;
+
+    /**
+     * Get the cache key
+     */
+    public function getCacheKey()
+    {
+        if ($this->cacheKey) {
+            return $this->cacheKey;
+        }
+
+        return Str::snake(class_basename($this) . '_' . $this->id);
+    }
+
+    /**
      * @param Model $duplicate
      * @return Model
      */
@@ -85,8 +107,12 @@ trait HasDuplicates
      * @return Model|bool
      * @throws Exception
      */
-    public function saveAsDuplicate()
+    public function saveAsDuplicate(string $cacheKey = null)
     {
+        if ($cacheKey) {
+            $this->cacheKey = $cacheKey;
+        }
+
         if ($this->fireModelEvent('duplicating') === false) {
             return false;
         }
@@ -170,6 +196,9 @@ trait HasDuplicates
         $model = $this->duplicateModelWithExcluding();
         $model = $this->duplicateModelWithUnique($model);
         $model->save();
+        $model->cacheKey = $this->getCacheKey();
+
+        $this->addDuplicatedModelToCache($this, $model);
 
         if (method_exists($this, 'afterDuplicationSave')) {
             $model = $this->afterDuplicationSave($model);
@@ -199,6 +228,10 @@ trait HasDuplicates
             $rel = $this->duplicateRelationWithExcluding($rel, $relation);
             $rel = $this->duplicateRelationWithUnique($rel, $relation);
             $rel = $model->{$relation}()->save($rel);
+            $rel->cacheKey = $model->getCacheKey();
+            $original->cacheKey = $model->getCacheKey();
+
+            $this->addDuplicatedModelToCache($original, $rel);
 
             if (method_exists($original, 'afterDuplicationSave')) {
                 $rel = $original->afterDuplicationSave($rel);
@@ -237,6 +270,7 @@ trait HasDuplicates
             $attributes = $this->establishDuplicatablePivotAttributes($rel);
 
             $model->{$relation}()->attach($rel, $attributes);
+            $rel->cacheKey = $this->getCacheKey();
 
             if (method_exists($original, 'afterDuplicationSave')) {
                 $rel = $original->afterDuplicationSave($rel);
@@ -292,6 +326,31 @@ trait HasDuplicates
         }
 
         return $this->replicate($except);
+    }
+
+    /**
+     * @param $original
+     * @param $duplicated
+     */
+    private function addDuplicatedModelToCache($original, $duplicated)
+    {
+        if (get_class($original) !== get_class($duplicated)) {
+            throw Exception(
+                'Cannot add duplicated item to list, classnames not equal: ' .
+                get_class($original) .
+                ', ' .
+                get_class($duplicated)
+            );
+        }
+
+        $key = $duplicated->cacheKey;
+        $duplicatedItems = Cache::get($key, []);
+        $duplicatedItems[] = [
+            'class' => get_class($original),
+            'original_id' => $original->id,
+            'duplicate_id' => $duplicated->id
+        ];
+        Cache::put($this->getCacheKey(), $duplicatedItems, now()->addMinutes(30));
     }
 
     /**
